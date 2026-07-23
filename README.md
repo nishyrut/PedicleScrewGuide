@@ -51,6 +51,7 @@ https://github.com/user-attachments/assets/3a239a59-43b5-4698-8a2e-7ac0ffc464a0
    |<outer_dia_jig>|The outer diameter of the jig in mm (Refer the attached JIG image)|
 * Ex: ```python main.py ct_scan_23.nii.gz vertebrae_T12+vertebrae_L1+vertebrae_L2 30 6 1.5 6```
 * This example reads the CT scan file, attempts to find the optimal screw placement with screw length and diameter of 30mm x 6mm, and attempts to create a 3D printable jig where the thickness of the mold will be 6 mm, and the path along the trajectory will be 1.5 mm for vertebrae T12, L1, L2.
+* The outputs are saved to ***data/downloads/generated_vertebraes.zip***
 
 ## System Requirements
 If your system meets the system requirements of [TotalSegmentator](https://github.com/wasserth/TotalSegmentator), it can run this script.
