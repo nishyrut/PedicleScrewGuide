@@ -7,6 +7,7 @@ import math
 import sys
 import vtk
 import shutil
+from pathlib import Path
 from vtk.util import numpy_support
 from totalsegmentator.python_api import totalsegmentator
 
@@ -16,8 +17,8 @@ print("Screw Guide Generator Starting")
 # Variable
 Testing = False
 Debug = False
-Run_Resampler = False
-Run_Totalsegmentator = False
+Run_Resampler = True
+Run_Totalsegmentator = True
 Single_Vertebrae_Dict = {}
 Slice_MM = 0.75 # NOTE: CONSTANT
 STL_Conversion = True
@@ -482,8 +483,10 @@ def height_map(single_vertebrae_mask, slice_y, dilation_iterations = 1, projecti
         coordinates = cv2.findNonZero(cv_image)
         # Fill height map with actual height values
         for coord in coordinates:
+            coord = np.atleast_2d(coord)
             height_map_array[coord[0][0]][coord[0][1]] = y
         for coord in coordinates:
+            coord = np.atleast_2d(coord)
             max_height = 0
             if height_map_array[coord[0][0]][coord[0][1] - lookback_value] > max_height:
                 max_height = height_map_array[coord[0][0]][coord[0][1] - lookback_value]
@@ -549,9 +552,11 @@ def best_screw_trajectory(single_vertebrae_mask, top_slice, height_map_array, pa
     # Generate lines
     for t_coord in top_coordinates:
         # Find the highest y level of the top coordinate to generate 3D point
+        t_coord = np.atleast_2d(t_coord)
         t_coord_3d = [int(t_coord[0][0]), height_map_array[int(t_coord[0][1]), int(t_coord[0][0])], int(t_coord[0][1])]
         for b_coord in bottom_coordinates:
           # Generate 3D point for bottom coordinate
+            b_coord = np.atleast_2d(b_coord)
             b_coord_3d = [int(b_coord[0][0]), passthrough_slice_y, int(b_coord[0][1])]
             # Generate line points
             line_points = generate_3d_line_by_length(t_coord_3d, b_coord_3d, length)
@@ -689,8 +694,15 @@ def create_jig(single_vertebrae_mask, p_min_points, jig_line_points, passthrough
     return shifted_shadow_volume
 
 if __name__ == "__main__":
+    # Ensure the required folders are present
+    data_dir = Path("data")
+    data_required_folders = ("downloads", "generated", "nii_files", "segmentations", "outputs")
+    for folder_name in data_required_folders:
+        subfolder = data_dir / folder_name
+        subfolder.mkdir(parents=True, exist_ok=True)
+
     # Read Arguments
-    input_file = sys.argv[1]
+    input_file = str(Path(sys.argv[1]))
     selected_vertebraes = sys.argv[2].split('+')
     s_height = math.ceil(float(sys.argv[3]) / Slice_MM)
     s_radius = math.ceil((float(sys.argv[4]) / 2) / Slice_MM)
@@ -714,37 +726,37 @@ if __name__ == "__main__":
     if Run_Resampler:
         img = resample_ct_volume(img, Slice_MM)
         if Debug: print("Resampled Image:", input_file)
-    sitk.WriteImage(img, "data/outputs/resampled_ct_scan.nii.gz", useCompression=True)
+    sitk.WriteImage(img, str(Path("data/outputs/resampled_ct_scan.nii.gz")), useCompression=True)
 
     # Totalsegmentator
     if Run_Totalsegmentator:
         totalsegmentator(
-            "data/outputs/resampled_ct_scan.nii.gz", 
-            "data/segmentations/", 
+            str(Path("data/outputs/resampled_ct_scan.nii.gz")), 
+            str(Path("data/segmentations/")), 
             task="vertebrae_mr", 
         )
         if Debug: print('TotalSegmentator mr complete: ', input_file)
 
     # Initialize variable to reconstruct spine
-    spine_mask = sitk.ReadImage(f"data/segmentations/{Spine_Vertebraes[0]}.nii.gz")
+    spine_mask = sitk.ReadImage(str(Path(f"data/segmentations/{Spine_Vertebraes[0]}.nii.gz")))
     # List each vertebrae and update Single_Vertebrae_Dict [Used to make negative which required predecessive and successive vertebrae]
     for vertebrae_name in Spine_Vertebraes:
-        if (vertebrae_name + ".nii.gz") in os.listdir("data/segmentations/"):
+        if (vertebrae_name + ".nii.gz") in os.listdir(str(Path("data/segmentations/"))):
             if Debug: print('Adding single_vertebrae_mask: ', vertebrae_name)
-            single_vertebrae_mask = sitk.ReadImage(f"data/segmentations/{vertebrae_name}.nii.gz")
+            single_vertebrae_mask = sitk.ReadImage(str(Path(f"data/segmentations/{vertebrae_name}.nii.gz")))
             spine_mask = spine_mask | single_vertebrae_mask
             Single_Vertebrae_Dict.update({vertebrae_name: single_vertebrae_mask})
-    if Debug: sitk.WriteImage(spine_mask, "data/generated/spine_output.nii.gz")
-    if STL_Conversion: sitk_to_stl(spine_mask, "data/generated/spine.stl")
+    if Debug: sitk.WriteImage(spine_mask, str(Path("data/generated/spine_output.nii.gz")))
+    if STL_Conversion: sitk_to_stl(spine_mask, str(Path("data/generated/spine.stl")))
 
     # Change directory and loop
     vertebrae_screw_gen_truth = ""
-    directory_listing = os.listdir("data/generated")
+    directory_listing = os.listdir(str(Path("data/generated")))
     for vertebrae_name in selected_vertebraes:
         if vertebrae_name in Single_Vertebrae_Dict.keys():
             if vertebrae_name not in directory_listing:
-                os.mkdir(f"data/generated/{vertebrae_name}")
-            os.chdir(f"data/generated/{vertebrae_name}")
+                os.mkdir(str(Path(f"data/generated/{vertebrae_name}")))
+            os.chdir(str(Path(f"data/generated/{vertebrae_name}")))
             if Debug: print(f"Starting screw placement for: {vertebrae_name}")
             single_vertebrae_mask = largest_object(Single_Vertebrae_Dict[vertebrae_name])
             spine_vertebrae_index = Spine_Vertebraes.index(vertebrae_name) - 1, Spine_Vertebraes.index(vertebrae_name) + 1
@@ -770,7 +782,7 @@ if __name__ == "__main__":
             else:
                 if Debug: print("Jig generation FAILED")
                 vertebrae_screw_gen_truth += "0"
-            os.chdir("../../../")
+            os.chdir(str(Path("../../../")))
     for i in range(len(selected_vertebraes)):
         if vertebrae_screw_gen_truth[i] == "1": status_string = "Success"
         else: status_string = "Failed"
@@ -778,14 +790,15 @@ if __name__ == "__main__":
 
     # Make archive
     shutil.make_archive(
-        base_name = "data/downloads/generated_vertebraes", 
+        base_name = str(Path("data/downloads/generated_vertebraes")), 
         format = "zip",
-        root_dir = "data/generated"
+        root_dir = str(Path("data/generated"))
     )
     # Delete folders
     if not(Testing):
-        shutil.rmtree("data/generated")
-        os.makedirs("data/generated")
-    with open("data/vertebrae_screw_gen_truth.txt", "w") as file:
+        gen_dir = Path("data/generated")
+        shutil.rmtree(str(Path("data/generated")))
+        gen_dir.mkdir(parents=True, exist_ok=True)
+    with open(str(Path("data/vertebrae_screw_gen_truth.txt")), "w") as file:
         file.write(vertebrae_screw_gen_truth)
     print("Program Completed :)")
