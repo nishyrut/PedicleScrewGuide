@@ -786,7 +786,6 @@ if __name__ == "__main__":
     if not(Testing):
         shutil.rmtree("data/generated")
         os.makedirs("data/generated")
-        with open("data/generated/.ignore", "w") as f: pass
     with open("data/vertebrae_screw_gen_truth.txt", "w") as file:
         file.write(vertebrae_screw_gen_truth)
     print("Program Completed :)")
