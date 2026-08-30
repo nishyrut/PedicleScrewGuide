@@ -237,8 +237,6 @@ def angle_correction(single_vertebrae_mask, adjacent_vertebrae_mask = None, Lumb
     # Debug by drawing the bounary box and the image
     if Debug:
         cv2.imwrite("sagittal_2d_vertebrae.png", max_image)
-        sitk.WriteImage(rotated_volume, "1.nii")
-        sitk.WriteImage(adjacent_vertebrae_mask, "10.nii")
         print("Debug: The calculated sagittal angle: ", sagittal_angle)
 
     # Find the foramen top and bottom point (useful for finding smallest pedicle slice)
