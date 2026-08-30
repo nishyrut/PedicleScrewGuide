@@ -233,9 +233,12 @@ def angle_correction(single_vertebrae_mask, adjacent_vertebrae_mask = None, Lumb
     # Sagittal angle operation (note that  max_rotated_volume has the sagitally straightened vertebrae)
     sagittal_angle = max_angle
     rotated_volume = max_rotated_volume
+    adjacent_vertebrae_mask = rotate_volume(adjacent_vertebrae_mask, [0, sagittal_angle, 0], single_vertebrae_mask_center_physical)
     # Debug by drawing the bounary box and the image
     if Debug:
         cv2.imwrite("sagittal_2d_vertebrae.png", max_image)
+        sitk.WriteImage(rotated_volume, "1.nii")
+        sitk.WriteImage(adjacent_vertebrae_mask, "10.nii")
         print("Debug: The calculated sagittal angle: ", sagittal_angle)
 
     # Find the foramen top and bottom point (useful for finding smallest pedicle slice)
@@ -270,6 +273,7 @@ def angle_correction(single_vertebrae_mask, adjacent_vertebrae_mask = None, Lumb
         cv2.imwrite("coronal_2d_vertebrae.png", coronal_image)
         print("Debug: The calculated coronal angle: ", coronal_angle)
     rotated_volume = rotate_volume(rotated_volume, [0, 0, coronal_angle], coronal_center_physical)
+    adjacent_vertebrae_mask = rotate_volume(adjacent_vertebrae_mask, [0, 0, coronal_angle], coronal_center_physical)
 
     # Make coronal value accurate just like sagittal
     # Find bbox and calculate the center of the vertebrae in pixel and mm(physical) format
@@ -292,6 +296,7 @@ def angle_correction(single_vertebrae_mask, adjacent_vertebrae_mask = None, Lumb
     max_rotated_volume_bbox = None
     if Debug: max_image = None
     # Rotate the vertebrae from -DEG deg to +DEG deg
+    rotated_volume_init = sitk.Image(rotated_volume)
     sagittal_angle_range = [-30, 30] # NOTE: CONSTANT
     sagittal_angle_range[1], sagittal_mid_angle = 0, sagittal_angle_range[1]
     sagittal_current_angle_list = sagittal_angle_range.copy()
@@ -306,7 +311,7 @@ def angle_correction(single_vertebrae_mask, adjacent_vertebrae_mask = None, Lumb
             if angle_index == max_prev_angle_index and not(first_iteration): continue
             if first_iteration: first_iteration = 0
             angle = sagittal_current_angle_list[angle_index]
-            rotated_volume = rotate_volume(rotated_volume, [0, 0, angle], coronal_center_physical)
+            rotated_volume = rotate_volume(rotated_volume_init, [0, 0, angle], coronal_center_physical)
             # Check if the maximum intensity in 0 (empty image)
             if sitk.MinimumMaximum(rotated_volume)[1] == 0: continue
             bbox = calc_bbox(rotated_volume)
@@ -341,6 +346,7 @@ def angle_correction(single_vertebrae_mask, adjacent_vertebrae_mask = None, Lumb
     # Sagittal angle operation (note that  max_rotated_volume has the sagitally straightened vertebrae)
     accurate_coronal_angle = max_angle
     rotated_volume = max_rotated_volume
+    adjacent_vertebrae_mask = rotate_volume(adjacent_vertebrae_mask, [0, 0, accurate_coronal_angle], coronal_center_physical)
     if Debug:
         cv2.imwrite("accurate_coronal_2d_vertebrae.png", max_image)
         print("Debug: The calculated accurate coronal angle: ", accurate_coronal_angle)
@@ -363,6 +369,7 @@ def angle_correction(single_vertebrae_mask, adjacent_vertebrae_mask = None, Lumb
         approx_axial_angle = math.degrees(math.atan2(abs(foramen_center[0] - vertebrae_body_mask_centroid[0]), abs(foramen_center[1] - vertebrae_body_mask_centroid[1])))
         if foramen_center[0] > vertebrae_body_mask_centroid[0]: approx_axial_angle *= -1
         rotated_volume = rotate_volume(rotated_volume, [approx_axial_angle, 0, 0], vertebrae_body_mask_centroid_physical)
+        adjacent_vertebrae_mask = rotate_volume(adjacent_vertebrae_mask, [approx_axial_angle, 0, 0], vertebrae_body_mask_centroid_physical)
         # Calculate bbox for new rotated vertebrae and repeat the same thing happened in calculating sagittal angle
         bbox = calc_bbox(rotated_volume)
         cv_image = get_2D_slice(rotated_volume, bbox[2], 2)
@@ -407,6 +414,7 @@ def angle_correction(single_vertebrae_mask, adjacent_vertebrae_mask = None, Lumb
         axial_angle = math.degrees(math.atan2(abs(spoinous_topmost_point[0] - foramen_center[0]), abs(spoinous_topmost_point[1] - foramen_center[1])))
     if spoinous_topmost_point[0] > foramen_center[0]: axial_angle *= -1
     rotated_volume = rotate_volume(rotated_volume, [axial_angle, 0, 0], foramen_center_physical)
+    adjacent_vertebrae_mask = rotate_volume(adjacent_vertebrae_mask, [axial_angle, 0, 0], foramen_center_physical)
     if Debug:
         debug_image = max_image.copy()
         cv2.line(debug_image, spoinous_topmost_point, foramen_center, 150, 2)
@@ -428,12 +436,7 @@ def angle_correction(single_vertebrae_mask, adjacent_vertebrae_mask = None, Lumb
         cv2.imwrite("foramen_points.png", debug_image)
  
     # Rotate adjacent vertebrae sagitally and axially (in order)
-    if adjacent_vertebrae_mask != None:
-        adjacent_vertebrae_mask = rotate_volume(adjacent_vertebrae_mask, [0, sagittal_angle, 0], single_vertebrae_mask_center_physical)
-        adjacent_vertebrae_mask = rotate_volume(adjacent_vertebrae_mask, [0, 0, coronal_angle], coronal_center_physical)
-        adjacent_vertebrae_mask = rotate_volume(adjacent_vertebrae_mask, [0, 0, accurate_coronal_angle], coronal_center_physical)
-        if not(Lumbar_mode): adjacent_vertebrae_mask = rotate_volume(adjacent_vertebrae_mask, [approx_axial_angle, 0, 0], vertebrae_body_mask_centroid_physical)
-        adjacent_vertebrae_mask = rotate_volume(adjacent_vertebrae_mask, [axial_angle, 0, 0], foramen_center_physical)
+    if adjacent_vertebrae_mask != None: pass
 
     # Return the rotated vertebrae along with the foramen_topmost_point for accurate pedicle segmentation
     return rotated_volume, adjacent_vertebrae_mask, [foramen_topmost_point, foramen_center, foramen_bottommost_point]
@@ -616,8 +619,10 @@ def best_screw_trajectory(single_vertebrae_mask, top_slice, height_map_array, pa
     return p_min_points, jig_line_points
 
 # Created a 3D printable jig
-def create_jig(single_vertebrae_mask, p_min_points, jig_line_points, passthrough_slice_y):
+def create_jig(single_vertebrae_mask, adjacent_vertebrae_mask, p_min_points, jig_line_points, passthrough_slice_y):
 
+    # Vertebrae mask combined
+    single_vertebrae_mask = single_vertebrae_mask | adjacent_vertebrae_mask
     # Working: Create a 3D -> 2D -> 3D projection by slicing and coverting each 3D slice to 2D slice, appending them in a list, and convertng the total list back to 3D, to get a shadow-cast volume.
     bbox = calc_bbox(single_vertebrae_mask)
     single_vertebrae_2d_projection = get_2D_slice(single_vertebrae_mask, bbox[1], 1)
@@ -625,6 +630,9 @@ def create_jig(single_vertebrae_mask, p_min_points, jig_line_points, passthrough
     image_size = single_vertebrae_mask.GetSize()
     empty_image_array = get_2D_slice(single_vertebrae_mask, bbox[1] - 1)
     empty_image_array = np.where(empty_image_array > 0, 1, 0).astype(np.uint8)
+    # Create bbox for adjacent vertebrae mask
+    adjacent_bbox = calc_bbox(adjacent_vertebrae_mask)
+    adjacent_mid_z = adjacent_bbox[2] + adjacent_bbox[5] // 2
     # Create empty slice and append for slices less than object's start height and greater than object'ss end height
     for i in range(bbox[1]):
         shadow_projection_list.append(empty_image_array)
@@ -648,9 +656,9 @@ def create_jig(single_vertebrae_mask, p_min_points, jig_line_points, passthrough
     shifted_shadow_volume = sitk.GetImageFromArray(shifted_shadow_volume_np)
     shifted_shadow_volume.CopyInformation(single_vertebrae_mask)
 
-    connector_radius = 2 # NOTE: CONSTANT
-    constant_height = 6 # NOTE: CONSTANT
-    connector_constant_height = 2 # NOTE: CONSTANT
+    connector_radius = 3 # NOTE: CONSTANT
+    constant_height = 10 # NOTE: CONSTANT
+    connector_constant_height = 4 # NOTE: CONSTANT
     jig_outer_list = []
     jig_inner_list = []
     jig_connector_points = []
@@ -678,6 +686,7 @@ def create_jig(single_vertebrae_mask, p_min_points, jig_line_points, passthrough
     if (int(jig_list[0][0][0]) + outer_radius) < (int(jig_list[1][0][0]) - outer_radius):
         shifted_shadow_volume[int(jig_list[0][0][0]) + outer_radius: int(jig_list[1][0][0]) - outer_radius, :, :] = 0
     shifted_shadow_volume[int(jig_list[1][0][0]) + outer_radius:, :, :] = 0
+    shifted_shadow_volume[:, :, adjacent_mid_z:] = 0
     
     # Perform basic operation to get the jig (shifted_shadow_volume)
     shifted_shadow_volume = shifted_shadow_volume | jig_outer_list[0] | jig_outer_list[1] | connector
@@ -767,6 +776,7 @@ if __name__ == "__main__":
             if Debug: print("Lumbar mode: ", Lumbar_mode)
             rotated_vertebrae, rotated_adjacent_vertebrae, foramen_points = angle_correction(single_vertebrae_mask, adjacent_vertebrae_mask, Lumbar_mode)
             if Debug: sitk.WriteImage(rotated_vertebrae, "rotated_vertebrae.nii")
+            if Debug: sitk.WriteImage(rotated_adjacent_vertebrae, "rotated_adjacent_vertebrae.nii")
             passthrough_slice_list, passthrough_slice_y = passthrough_slice(rotated_vertebrae, foramen_points)
             top_slice, height_map_array = height_map(rotated_vertebrae, passthrough_slice_y, 1, True, rotated_adjacent_vertebrae, Lumbar_mode)
             if Debug: print("Trajectory 0 generating")
@@ -775,7 +785,7 @@ if __name__ == "__main__":
             trajectory_points_1, jig_line_points_1 = best_screw_trajectory(rotated_vertebrae, top_slice, height_map_array, passthrough_slice_list[1], passthrough_slice_y, foramen_points, s_height)
             if len(trajectory_points_0) != 0 and len(trajectory_points_1) != 0:
                 if Debug: print("Jig generating")
-                jig_volume = create_jig(rotated_vertebrae, (trajectory_points_0, trajectory_points_1), (jig_line_points_0, jig_line_points_1), passthrough_slice_y)
+                jig_volume = create_jig(rotated_vertebrae, rotated_adjacent_vertebrae, (trajectory_points_0, trajectory_points_1), (jig_line_points_0, jig_line_points_1), passthrough_slice_y)
                 vertebrae_screw_gen_truth += "1"
                 if STL_Conversion: sitk_to_stl(rotated_vertebrae, "rotated_vertebrae.stl")
                 if STL_Conversion: sitk_to_stl(jig_volume, "jig_base_layer_volume.stl")
