@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/3a239a59-43b5-4698-8a2e-7ac0ffc464a0
 
 ## Installation
 * This script requires python, along with the modules listed in requirements.txt
-* Install python for your OS and ensure python is in PATH env
+* Install python for your OS and ensure python and pip is in PATH env
 * Install necessary python modules using the command ```pip install -r requirements.txt```
 
 ## Features
